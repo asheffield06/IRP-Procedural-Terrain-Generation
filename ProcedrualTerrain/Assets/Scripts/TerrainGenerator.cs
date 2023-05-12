@@ -33,7 +33,7 @@ public class TerrainGenerator : MonoBehaviour
     public float lacunarity;
 
     // Octaves are for how many times the perlin noise is applied
-    [Range(1f, 10f)]
+    [Range(1f, 6f)]
     public int octaves;
 
     [Range(10, 35)]
