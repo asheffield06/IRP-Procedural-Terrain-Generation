@@ -1,29 +1,41 @@
 using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 [RequireComponent(typeof(MeshFilter))]
 public class TerrainGenerator : MonoBehaviour
 {
+    // GameObjects which get rotated
+    public GameObject water;
+    public GameObject terrain;
+    public GameObject pivot;
+
+    // GameObject for enviroment objects
+    public GameObject house;
+
     Mesh mesh;
-    private int MESH_SCALE = 100;
-    public GameObject[] objects;
+    public List<GameObject> objectsList;
     public AnimationCurve heightCurve;
-    private Vector3[] vertices;
+    
+    // Arrays to store values for the generated verticies (triangles are just 3 verticies)
     private int[] triangles;
+    private Vector3[] vertices;
 
-    private Color[] colors;
-    public Gradient gradient;
-
+    // Tracks the colors put onto the mesh
+    public Gradient enviromentGradient;
+    private Color[] enviromentColors;
+    
+    // Clamping values for heights
     private float minTerrainheight;
     private float maxTerrainheight;
 
     private float lastNoiseHeight;
 
+    // Size of the Terrain, set to 100 for consistency
     private int horizontalSize = 100;
     private int verticalSize = 100;
 
+    // Values that get changed to manipulate how the terrain looks
     public int seed;
 
     [Range(25f, 75f)]
@@ -32,7 +44,6 @@ public class TerrainGenerator : MonoBehaviour
     [Range(1.5f, 3)]
     public float lacunarity;
 
-    // Octaves are for how many times the perlin noise is applied
     [Range(1f, 6f)]
     public int octaves;
 
@@ -49,6 +60,7 @@ public class TerrainGenerator : MonoBehaviour
     private float initialPersistence;
 
 
+    public bool showTriangles = false;
 
     // A gameobject to parent all spawned in enviromental elements onto
     public GameObject enviromentParent;
@@ -69,15 +81,19 @@ public class TerrainGenerator : MonoBehaviour
     }
 
 
-    void Start()
+    public void Start()
     {
+        // Sets a refrence to the mesh that gets created
+        mesh = new Mesh();
+        GetComponent<MeshFilter>().mesh = mesh;
+
+        // Sets all the initial values
         initialAmplitude = amplitude;
         initialFrequency = frequency;
         initialPersistence = persistence;
-
-        mesh = new Mesh();
-        GetComponent<MeshFilter>().mesh = mesh;
-        CreateNewMap();
+        
+        // Calls function to start the terrain generation
+        CreateNewTerrain();
     }
 
 
@@ -85,16 +101,17 @@ public class TerrainGenerator : MonoBehaviour
     {
         if (Input.GetKeyDown(KeyCode.Space))
         {
-            CreateNewMap();
+            CreateNewTerrain();
         }
     }
-    public void CreateNewMap()
+    public void CreateNewTerrain()
     {
         ResetTerrainValues();
-        CreateMeshShape();
-        CreateTriangles();
+        InitialiseMeshDimensions();
+        SetTriangles();
         ColorMap();
-        UpdateMesh();
+        UpdateMeshValues();
+        PopulateEnviroment();
     }
 
     // Resets the terrains variables so that a new one can be made
@@ -107,13 +124,16 @@ public class TerrainGenerator : MonoBehaviour
         initialFrequency = frequency;
         initialPersistence = persistence;
 
+        pivot.transform.eulerAngles = new Vector3(0, 0, 0);
+        objectsList.Add(house);
+
         mesh.Clear();
         mesh = new Mesh();
         GetComponent<MeshFilter>().mesh = mesh;
     }
 
     // Creates the verticies data and stores the positions as vector3s
-    private void CreateMeshShape()
+    public void InitialiseMeshDimensions()
     {
         // Creates seed
         Vector2[] octaveOffsets = GetOffsets();
@@ -127,9 +147,9 @@ public class TerrainGenerator : MonoBehaviour
         {
             for (int x = 0; x <= horizontalSize; x++)
             {
-                // Set height of vertices
+                // Set the height value of the vertices
                 float noiseHeight = GenerateNoiseHeight(z, x, octaveOffsets);
-                SetMinMaxHeights(noiseHeight);
+                ClampTerrainHeights(noiseHeight);
                 vertices[verticiesIndex] = new Vector3(x, noiseHeight, z);
                 verticiesIndex++;
             }
@@ -137,7 +157,7 @@ public class TerrainGenerator : MonoBehaviour
     }
 
     // Used to seed the random number generator and set the octaves offsets
-    private Vector2[] GetOffsets()
+    public Vector2[] GetOffsets()
     {
         // Seeds the random so that all generation will always come out the same given the same values
         System.Random rand = new System.Random(seed);
@@ -151,15 +171,22 @@ public class TerrainGenerator : MonoBehaviour
             float offsetY = rand.Next(-100000, 100000);
             octaveOffsets[i] = new Vector2(offsetX, offsetY);
         }
-        return octaveOffsets;
+
+        // Simple null check
+        if(octaveOffsets != null)
+        {
+            return octaveOffsets;
+        }
+        else
+        {
+            return GetOffsets();
+        }
+        
     }
 
-    private float GenerateNoiseHeight(int z, int x, Vector2[] octaveOffsets)
+    public float GenerateNoiseHeight(int z, int x, Vector2[] octaveOffsets)
     {
-        // I moved amplitude and frequency from here to one of the inspector variables
-        //float amplitude = 20;
-        //float frequency = 1;
-        //float persistence = 0.5f;
+        // Noise height is used to track incrementations while in the forloop of octaves
         float noiseHeight = 0;
 
         // Loop for as many chosen octaves 
@@ -171,8 +198,10 @@ public class TerrainGenerator : MonoBehaviour
             // Doubling the perlinValue and adding 1 to it makes the generated terrain build out from the bottom more visually appealing
             float perlinValue = 2 * (Mathf.PerlinNoise(mapZ, mapX)) - 1;
 
-
+            // Updates the noiseheight value to reflect the perlin noise
             noiseHeight += heightCurve.Evaluate(perlinValue) * amplitude;
+
+            // Modifies the frequency and amplitude so it can be used in the next loop
             frequency *= lacunarity;
             amplitude *= persistence;
         }
@@ -185,87 +214,155 @@ public class TerrainGenerator : MonoBehaviour
         return noiseHeight;
     }
 
-    private void SetMinMaxHeights(float noiseHeight)
+    // Simple fucntion that just clamps the heights for the gradient to use
+    public void ClampTerrainHeights(float noiseHeight)
     {
-        // Set min and max height of map for color gradient
+        // Set min and max height of map for color gradient by clamping the values
         if (noiseHeight > maxTerrainheight)
+        {
             maxTerrainheight = noiseHeight;
+        }
         if (noiseHeight < minTerrainheight)
+        {
             minTerrainheight = noiseHeight;
+        }
+            
     }
 
-
-    private void CreateTriangles()
+    // Creates the physical terrain by creating triangles that fill in the vertcies
+    public void SetTriangles()
     {
-        // Need 6 vertices to create a square (2 triangles)
-        triangles = new int[horizontalSize * verticalSize * 6];
-
-        int vert = 0;
+        // Setting up variables to hold information about how many loops have been completed
         int tris = 0;
-        // Go to next row
-        for (int z = 0; z < horizontalSize; z++)
+        int verticies = 0;
+
+        // 3 Verticies makes up one triangle and two triangles make up a square
+        int terrainAreaSize = horizontalSize * verticalSize;
+        triangles = new int[terrainAreaSize * 6];
+
+        // Nested for loop lerps through every verticie position on the terrain
+        for (int z = 0; z < verticalSize; z++)
         {
-            // fill row
             for (int x = 0; x < horizontalSize; x++)
             {
-                triangles[tris + 0] = vert + 0;
-                triangles[tris + 1] = vert + horizontalSize + 1;
-                triangles[tris + 2] = vert + 1;
-                triangles[tris + 3] = vert + 1;
-                triangles[tris + 4] = vert + horizontalSize + 1;
-                triangles[tris + 5] = vert + horizontalSize + 2;
+                // Visually shows the triangles created on the terrain or not depending on the booleon
+                if (!showTriangles)
+                {
+                    // Two triangles are created which create a square 
+                    triangles[tris + 0] = verticies;
+                    triangles[tris + 1] = verticies + verticalSize + 1;
+                    triangles[tris + 2] = verticies + 1;
+                    triangles[tris + 3] = verticies + 1;
+                    triangles[tris + 4] = verticies + horizontalSize + 1;
+                    triangles[tris + 5] = verticies + horizontalSize + 2;
 
-                vert++;
-                tris += 6;
+                    verticies++;
+                    tris += 6;
+                }
+                else
+                {
+                    // Two triangles are related but one is moved so that it is blank and gives visualisation of how the triangle looks
+                    triangles[tris + 0] = verticies;
+                    triangles[tris + 1] = verticies + verticalSize + 1;
+                    triangles[tris + 2] = verticies + verticalSize + 2;
+                    triangles[tris + 3] = verticies;
+                    triangles[tris + 4] = verticies + horizontalSize + 1;
+                    triangles[tris + 5] = verticies + horizontalSize + 2;
+
+                    verticies++;
+                    tris += 6;
+                }
             }
-            vert++;
+            verticies++;
         }
     }
 
-    private void ColorMap()
+
+    // Creates the Colormap which is essentially how the gradient pastes the colours onto the generated terrain based off their height
+    public void ColorMap()
     {
-        colors = new Color[vertices.Length];
+        enviromentColors = new Color[vertices.Length];
 
         // Loop over vertices and apply a color from the depending on height (y axis value)
         for (int i = 0, z = 0; z < vertices.Length; z++)
         {
+            // Gets the height of the vertcie being looped over
             float height = Mathf.InverseLerp(minTerrainheight, maxTerrainheight, vertices[i].y);
-            colors[i] = gradient.Evaluate(height);
+
+            // Sets the colour of this vertcie based off of how heigh the verticie is in relation to the maximum and minimum height
+            enviromentColors[i] = enviromentGradient.Evaluate(height);
+
+            // Increments loop
             i++;
         }
     }
 
-    private void PopulateEnviroment()
+    // Final step in mesh generation is to remake the mesh to represent all the newly made verticies value 
+    public void UpdateMeshValues()
+    {
+        // Resets the mesh and sets the verticies to the triangles that were created in the prior function
+        mesh.Clear();
+        mesh.vertices = vertices;
+        mesh.triangles = triangles;
+        mesh.colors = enviromentColors;
+
+        // Recalculates all the values to represent the updated vertcies
+        mesh.RecalculateNormals();
+        mesh.RecalculateTangents();
+
+        // Sets the scale of the gameobject to be the size of the bounds
+        gameObject.transform.localScale = new Vector3(horizontalSize, 100, verticalSize);
+
+        // Sets the phsycial mesh collider that is used for raycasting objects on
+        GetComponent<MeshCollider>().sharedMesh = mesh;
+    }
+
+
+    public void PopulateEnviroment()
     {
         // Destroys all previous spawned enviromental objects
         foreach (Transform child in enviromentParent.transform)
         {
             GameObject.Destroy(child.gameObject);
         }
-        Debug.Log(vertices.Length);
+
         for (int i = 0; i < vertices.Length; i++)
         {
-            // find actual position of vertices in the game
-            Vector3 worldPt = transform.TransformPoint(mesh.vertices[i]);
-            var noiseHeight = worldPt.y;
+            // Finds the actual psotion of the verticie in world
+            Vector3 vertexWorldPosition = transform.TransformPoint(mesh.vertices[i]);
+            float vertexHeight = vertexWorldPosition.y;
 
-            // Stop generation if height difference between 2 vertices is too steep
-            if (System.Math.Abs(lastNoiseHeight - worldPt.y) < 25)
+            int inCentralVerticies = -1;
+            if(i > 1132)
+            {
+                inCentralVerticies = 0;
+            }
+
+            // Doesnt generate the enviromental objects if the height between two verticies is too steep
+            if (System.Math.Abs(lastNoiseHeight - vertexWorldPosition.y) < 25)
             {
                 // min height for object generation
-                if (noiseHeight > 100)
+                if (vertexHeight > 100)
                 {
-                    // Chance to generate
-                    if (Random.Range(1, 5) == 1)
+                    int randomValue = Random.Range(1, 5);
+                    // Gives every vertex a random chance to spawn a enviromental object
+                    if (randomValue == 1)
                     {
-                        if(objects.Length != 0)
+                        if(objectsList.Count != 0)
                         {
-                            GameObject enviromentalObject = objects[Random.Range(0, objects.Length)];
-                            var spawnAboveTerrainBy = noiseHeight * 2;
-                            GameObject instantiatedEnviromentObject = Instantiate(enviromentalObject, new Vector3(mesh.vertices[i].x * MESH_SCALE, spawnAboveTerrainBy, mesh.vertices[i].z * MESH_SCALE), Quaternion.identity);
+                            int randomObject = Random.Range(0, objectsList.Count + inCentralVerticies);
+                            GameObject enviromentalObject = objectsList[randomObject];
+
+                            var spawnAboveTerrainBy = vertexHeight * 2;
+                            GameObject instantiatedEnviromentObject = Instantiate(enviromentalObject, new Vector3(mesh.vertices[i].x * horizontalSize, spawnAboveTerrainBy, mesh.vertices[i].z * verticalSize), Quaternion.identity);
 
                             // Parents the enviromental object to a gameobject that can later be cleared for new generations
                             instantiatedEnviromentObject.transform.SetParent(enviromentParent.transform, true);
+
+                            if (enviromentalObject.GetComponent<Objects>().oneTimeSpawn == true)
+                            {
+                                objectsList.Remove(objectsList[randomObject]);
+                            }
                         }
                         else
                         {
@@ -274,24 +371,10 @@ public class TerrainGenerator : MonoBehaviour
                     }
                 }
             }
-            lastNoiseHeight = noiseHeight;
+            lastNoiseHeight = vertexHeight;
         }
     }
 
-    private void UpdateMesh()
-    {
-        mesh.Clear();
-        mesh.vertices = vertices;
-        mesh.triangles = triangles;
-        mesh.colors = colors;
-        mesh.RecalculateNormals();
-        mesh.RecalculateTangents();
-
-        GetComponent<MeshCollider>().sharedMesh = mesh;
-        gameObject.transform.localScale = new Vector3(MESH_SCALE, MESH_SCALE, MESH_SCALE);
-
-        PopulateEnviroment();
-    }
 
 }
 

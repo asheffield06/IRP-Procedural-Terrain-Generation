@@ -5,6 +5,21 @@ using UnityEngine;
 public class RotateScript : MonoBehaviour
 {
     public float speed = 1;
+
+    public static RotateScript instance;
+    public void Awake()
+    {
+        // Initialise Singleton
+        if (instance != null)
+        {
+            if (instance != this)
+            {
+                Destroy(this.gameObject);
+            }
+        }
+        instance = this;
+    }
+
     // Update is called once per frame
     void Update()
     {

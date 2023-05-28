@@ -4,12 +4,8 @@ using UnityEngine;
 
 public class Objects : MonoBehaviour
 {
+    public bool oneTimeSpawn = false;
     void Start()
-    {
-        FindLand();
-    }
-
-    public void FindLand()
     {
         Ray ray = new Ray(transform.position, -transform.up);
         RaycastHit hitInfo;
