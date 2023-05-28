@@ -5,13 +5,21 @@ using UnityEngine;
 public class Objects : MonoBehaviour
 {
     public bool oneTimeSpawn = false;
+
+    public bool hitTerrain = false;
     void Start()
     {
-        Ray ray = new Ray(transform.position, -transform.up);
-        RaycastHit hitInfo;
-        if (Physics.Raycast(ray, out hitInfo))
+        RaycastHit ObjectPosition;
+        Ray castedRay = new Ray(transform.position, -transform.up);
+        
+        if (Physics.Raycast(castedRay, out ObjectPosition))
         {
-            transform.position = new Vector3(hitInfo.point.x, hitInfo.point.y, hitInfo.point.z);
+            hitTerrain = true;
+            gameObject.transform.position = new Vector3(ObjectPosition.point.x, ObjectPosition.point.y, ObjectPosition.point.z);
+            if(gameObject.transform.position.y < 0)
+            {
+                Destroy(gameObject);
+            }
         }
         else
         {

@@ -2,7 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-[RequireComponent(typeof(MeshFilter))]
+//[RequireComponent(typeof(MeshFilter))]
 public class TerrainGenerator : MonoBehaviour
 {
     // GameObjects which get rotated
